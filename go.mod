@@ -1,4 +1,4 @@
-module sshtool
+module github.com/Lvzhenqian/sshtool
 
 go 1.13
 
