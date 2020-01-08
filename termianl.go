@@ -167,7 +167,7 @@ func (t *SSHTerminal) interactiveSession() error {
 	return nil
 }
 
-func (t *SSHTerminal) Run(cmd string, c *ssh.Client) error {
+func (t *SSHTerminal) Run(cmd string, w io.Writer, c *ssh.Client) error {
 	session, SessionErr := c.NewSession()
 	defer session.Close()
 	if SessionErr != nil {
@@ -178,13 +178,13 @@ func (t *SSHTerminal) Run(cmd string, c *ssh.Client) error {
 		return ReaderErr
 	}
 	scanner := bufio.NewScanner(reader)
-	go func() {
+	go func(output io.Writer) {
 		for scanner.Scan() {
-			if _, e := fmt.Fprintln(os.Stdout, scanner.Text()); e != nil {
+			if _, e := fmt.Fprintln(output, scanner.Text()); e != nil {
 				continue
 			}
 		}
-	}()
+	}(w)
 
 	if err := session.Run(cmd); err != nil {
 		return err
@@ -204,14 +204,14 @@ func (t *SSHTerminal) Login(c *ssh.Client) error {
 
 func (t *SSHTerminal) PushFile(src string, dst string, c *ssh.Client) error {
 	var (
-		Realsrc	string
+		Realsrc string
 		Realdst string
 	)
 	sftpClient, err := sftp.NewClient(c)
 	defer sftpClient.Close()
 	//Get RealPath
 	Realsrc = LocalRealPath(src)
-	Realdst = RemoteRealpath(dst,sftpClient)
+	Realdst = RemoteRealpath(dst, sftpClient)
 
 	// open file
 	srcFile, err := os.Open(Realsrc)
@@ -244,12 +244,12 @@ func (t *SSHTerminal) PushFile(src string, dst string, c *ssh.Client) error {
 func (t *SSHTerminal) GetFile(src string, dst string, c *ssh.Client) error {
 	var (
 		Realsrc string
-		Realdst	string
+		Realdst string
 	)
 	// new SftpClient
 	sftpClient, err := sftp.NewClient(c)
 	defer sftpClient.Close()
-	Realsrc = RemoteRealpath(src,sftpClient)
+	Realsrc = RemoteRealpath(src, sftpClient)
 	Realdst = LocalRealPath(dst)
 	if err != nil {
 		return err
@@ -285,8 +285,8 @@ func (t *SSHTerminal) GetFile(src string, dst string, c *ssh.Client) error {
 
 func (t *SSHTerminal) PushDir(src string, dst string, c *ssh.Client) error {
 	var (
-		Realsrc	string
-		Realdst	string
+		Realsrc string
+		Realdst string
 	)
 	sftpClient, err := sftp.NewClient(c)
 	defer sftpClient.Close()
@@ -294,7 +294,7 @@ func (t *SSHTerminal) PushDir(src string, dst string, c *ssh.Client) error {
 		return err
 	}
 	Realsrc = LocalRealPath(src)
-	Realdst = RemoteRealpath(dst,sftpClient)
+	Realdst = RemoteRealpath(dst, sftpClient)
 
 	root, dir := path.Split(Realsrc)
 	if err := os.Chdir(root); err != nil {
@@ -338,8 +338,8 @@ func (t *SSHTerminal) PushDir(src string, dst string, c *ssh.Client) error {
 
 func (t *SSHTerminal) GetDir(src string, dst string, c *ssh.Client) error {
 	var (
-		Realsrc 	string
-		Realdst		string
+		Realsrc string
+		Realdst string
 	)
 	// new SftpClient
 	sftpClient, err := sftp.NewClient(c)
@@ -347,7 +347,7 @@ func (t *SSHTerminal) GetDir(src string, dst string, c *ssh.Client) error {
 	if err != nil {
 		return err
 	}
-	Realsrc = RemoteRealpath(src,sftpClient)
+	Realsrc = RemoteRealpath(src, sftpClient)
 	Realdst = LocalRealPath(dst)
 	walker := sftpClient.Walk(Realsrc)
 	//获取远程目录的大小
@@ -406,16 +406,16 @@ func (t *SSHTerminal) GetDir(src string, dst string, c *ssh.Client) error {
 }
 
 func (t *SSHTerminal) Get(src, dst string, c *ssh.Client) error {
-	var(
+	var (
 		Realsrc string
-		Realdst	string
+		Realdst string
 	)
 	sftpCli, err := sftp.NewClient(c)
 	if err != nil {
 		return err
 	}
 	defer sftpCli.Close()
-	Realsrc = RemoteRealpath(src,sftpCli)
+	Realsrc = RemoteRealpath(src, sftpCli)
 	Realdst = LocalRealPath(dst)
 	state, Serr := sftpCli.Stat(Realsrc)
 	if Serr != nil {
@@ -433,7 +433,7 @@ func (t *SSHTerminal) Get(src, dst string, c *ssh.Client) error {
 	}
 }
 
-func (t *SSHTerminal)Push(src, dst string, c *ssh.Client) error {
+func (t *SSHTerminal) Push(src, dst string, c *ssh.Client) error {
 	var (
 		Realsrc string
 		Realdst string
@@ -441,7 +441,7 @@ func (t *SSHTerminal)Push(src, dst string, c *ssh.Client) error {
 
 	Realsrc = LocalRealPath(src)
 	Sstate, Serr := os.Stat(Realsrc)
-	if Serr != nil{
+	if Serr != nil {
 		panic(Serr)
 	}
 	if Sstate.IsDir() {
@@ -452,9 +452,9 @@ func (t *SSHTerminal)Push(src, dst string, c *ssh.Client) error {
 			return err
 		}
 		defer sftpCli.Close()
-		Realdst = RemoteRealpath(dst,sftpCli)
+		Realdst = RemoteRealpath(dst, sftpCli)
 		Dstat, err := sftpCli.Stat(Realdst)
-		if err != nil{
+		if err != nil {
 			panic(err)
 		}
 		if Dstat.IsDir() {
@@ -465,9 +465,8 @@ func (t *SSHTerminal)Push(src, dst string, c *ssh.Client) error {
 	}
 }
 
-
 func LocalRealPath(ph string) string {
-	sl := strings.Split(ph,"/")
+	sl := strings.Split(ph, "/")
 	if sl[0] == "~" {
 		s, ok := os.LookupEnv("HOME")
 		if !ok {
@@ -480,7 +479,7 @@ func LocalRealPath(ph string) string {
 }
 
 func RemoteRealpath(ph string, c *sftp.Client) string {
-	sl := strings.Split(ph,"/")
+	sl := strings.Split(ph, "/")
 	if sl[0] == "~" {
 		r, e := c.Getwd()
 		if e != nil {
