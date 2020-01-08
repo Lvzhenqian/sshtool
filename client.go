@@ -44,9 +44,17 @@ func NewClient(ip string, port int, user string, password string, privatekey str
 	return ssh.Dial("tcp", fmt.Sprintf("%s:%d", ip, port), cfg)
 }
 
+type TunnelSetting struct {
+	Network 	string
+	// 如果Network 为unix，则Address为对应的文件路径
+	// 如果Netwokr 为tcp，则Address为 ip:port
+	Address 	string
+}
+
 type SshClient interface {
 	Login(c *ssh.Client) error
 	Run(cmd string, output io.Writer, c *ssh.Client) error
 	Get(src, dst string, c *ssh.Client) error
 	Push(src, dst string, c *ssh.Client) error
+	TunnelStart(Local,Remote TunnelSetting,c *ssh.Client) error
 }

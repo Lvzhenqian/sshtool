@@ -9,6 +9,7 @@ import (
 	"golang.org/x/crypto/ssh/terminal"
 	"gopkg.in/cheggaaa/pb.v1"
 	"io"
+	"net"
 	"os"
 	"os/signal"
 	"path"
@@ -489,4 +490,41 @@ func RemoteRealpath(ph string, c *sftp.Client) string {
 		return path.Join(sl...)
 	}
 	return ph
+}
+
+func (t *SSHTerminal) TunnelStart(Local, Remote TunnelSetting, c *ssh.Client) error {
+	listener, err := net.Listen(Local.Network, Local.Address)
+	if err != nil {
+		return err
+	}
+	defer listener.Close()
+
+	for {
+		conn, err := listener.Accept()
+		if err != nil {
+			return err
+		}
+		go t.forward(conn, Remote, c)
+	}
+}
+
+func (t *SSHTerminal) forward(localConn net.Conn, remote TunnelSetting, cli *ssh.Client) {
+	remoteConn, err := cli.Dial(remote.Network, remote.Address)
+	if err != nil {
+		fmt.Printf("Remote dial error: %s\n", err)
+		return
+	}
+
+	copyConn := func(writer, reader net.Conn) {
+		defer writer.Close()
+		defer reader.Close()
+
+		_, err := io.Copy(writer, reader)
+		if err != nil {
+			fmt.Printf("io.Copy error: %s", err)
+		}
+	}
+
+	go copyConn(localConn, remoteConn)
+	go copyConn(remoteConn, localConn)
 }
