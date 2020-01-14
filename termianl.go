@@ -528,3 +528,134 @@ func (t *SSHTerminal) forward(localConn net.Conn, remote TunnelSetting, cli *ssh
 	go copyConn(localConn, remoteConn)
 	go copyConn(remoteConn, localConn)
 }
+
+func (t *SSHTerminal) forwardFile(srcfile, dstfile string, SrcCli, DstCli *ssh.Client) (int64, error) {
+	// src 创建sftp客户端
+	Srcftp, SrcErr := sftp.NewClient(SrcCli)
+	if SrcErr != nil {
+		return 0, SrcErr
+	}
+	defer Srcftp.Close()
+	// 读取文件绝对路径
+	srcRealPath := RemoteRealpath(srcfile, Srcftp)
+	// dst 创建 sftp 客户端
+	Dstftp, DstErr := sftp.NewClient(DstCli)
+	if DstErr != nil {
+		return 0, DstErr
+	}
+	defer Dstftp.Close()
+	// 读取文件绝对路径
+	dstRealPath := RemoteRealpath(dstfile, Dstftp)
+
+	srcReader, srcReaderErr := Srcftp.Open(srcRealPath)
+	if srcReaderErr != nil {
+		return 0, srcReaderErr
+	}
+	defer srcReader.Close()
+	srcStat, GetSrcStateErr := srcReader.Stat()
+	if GetSrcStateErr != nil {
+		return 0, GetSrcStateErr
+	}
+	// 创建progress bar
+	bar := pb.New64(srcStat.Size()).SetUnits(pb.U_BYTES)
+	bar.ShowSpeed = true
+	bar.ShowTimeLeft = true
+	bar.ShowPercent = true
+	bar.Prefix(path.Base(srcRealPath))
+	defer bar.Finish()
+	bar.Start()
+	dstWriter, dstWriterErr := Dstftp.Create(dstRealPath)
+	if dstWriterErr != nil {
+		return 0, dstWriterErr
+	}
+	defer dstWriter.Close()
+	MultiWriters := io.MultiWriter(bar, dstWriter)
+	return io.Copy(MultiWriters, srcReader)
+}
+
+func (t *SSHTerminal) forwardDir(srcPath, DstPath string, SrcCli, DstCli *ssh.Client) error {
+	// src 创建sftp客户端
+	Srcftp, SrcErr := sftp.NewClient(SrcCli)
+	if SrcErr != nil {
+		return SrcErr
+	}
+	defer Srcftp.Close()
+	// 读取文件绝对路径
+	srcRealPath := RemoteRealpath(srcPath, Srcftp)
+
+	size := func(c *sftp.Client) int64 {
+		var ret int64
+		TotalWalk := c.Walk(srcRealPath)
+		for TotalWalk.Step() {
+			stat := TotalWalk.Stat()
+			if !stat.IsDir() {
+				ret += stat.Size()
+			}
+		}
+		return ret
+	}(Srcftp)
+	bar := pb.New64(size).SetUnits(pb.U_BYTES)
+	bar.ShowSpeed = true
+	bar.ShowTimeLeft = true
+	bar.ShowPercent = true
+	bar.Prefix(path.Base(srcRealPath))
+	//bar.Start()
+	defer bar.Finish()
+
+	// dst 创建 sftp 客户端
+	Dstftp, DstErr := sftp.NewClient(DstCli)
+	if DstErr != nil {
+		return DstErr
+	}
+	defer Dstftp.Close()
+	// 读取文件绝对路径
+	dstRealPath := RemoteRealpath(DstPath, Dstftp)
+	walk := Srcftp.Walk(srcRealPath)
+	for walk.Step() {
+		state := walk.Stat()
+		source := walk.Path()
+		trimPrefix := strings.TrimPrefix(source, path.Dir(srcRealPath))
+		destination := path.Join(dstRealPath, trimPrefix)
+		switch {
+		case walk.Err() != nil:
+			panic(walk.Err())
+		case state.IsDir():
+			Dstftp.Mkdir(destination)
+		default:
+			fmt.Println()
+			dstfile, dstCreateErr := Dstftp.Create(destination)
+			if dstCreateErr != nil {
+				return dstCreateErr
+			}
+			defer dstfile.Close()
+			srcfile, srcOpenErr := Srcftp.Open(source)
+			if srcOpenErr != nil {
+				return srcOpenErr
+			}
+			defer srcfile.Close()
+			multiWriters := io.MultiWriter(dstfile, bar)
+			if _, err := io.Copy(multiWriters, srcfile); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (t *SSHTerminal) Forward(SrcPath, DstPath string, SrcCli, DstCli *ssh.Client) error {
+	srcftp, SrcCreateErr := sftp.NewClient(SrcCli)
+	if SrcCreateErr != nil {
+		return SrcCreateErr
+	}
+	srcState, StatErr := srcftp.Stat(SrcPath)
+	if StatErr != nil {
+		return StatErr
+	}
+	switch {
+	case srcState.IsDir():
+		return t.forwardDir(SrcPath, DstPath, SrcCli, DstCli)
+	default:
+		_, err := t.forwardFile(SrcPath, DstPath, SrcCli, DstCli)
+		return err
+	}
+}

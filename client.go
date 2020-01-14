@@ -57,4 +57,5 @@ type SshClient interface {
 	Get(src, dst string, c *ssh.Client) error
 	Push(src, dst string, c *ssh.Client) error
 	TunnelStart(Local,Remote TunnelSetting,c *ssh.Client) error
+	Forward(SrcPath,DstPath string,SrcCli,DstCli *ssh.Client) error
 }
