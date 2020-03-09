@@ -311,11 +311,14 @@ func (t *SSHTerminal) PushDir(src string, dst string, c *ssh.Client) error {
 	defer bar.Finish()
 	var wg sync.WaitGroup
 	WalkErr := filepath.Walk(dir, func(p string, info os.FileInfo, err error) error {
+		DstPath := path.Join(Realdst, p)
 		switch {
 		case info.IsDir():
-			sftpClient.Mkdir(p)
+			if e:=sftpClient.Mkdir(DstPath); e !=nil{
+				return e
+			}
 		default:
-			dstfile := path.Join(Realdst, p)
+
 			wg.Add(1)
 			go func(wgroup *sync.WaitGroup, b *pb.ProgressBar, Srcfile string, Dstfile string) {
 				defer wgroup.Done()
@@ -325,7 +328,7 @@ func (t *SSHTerminal) PushDir(src string, dst string, c *ssh.Client) error {
 				defer d.Close()
 				i, _ := io.Copy(d, s)
 				b.Add64(i)
-			}(&wg, bar, p, dstfile)
+			}(&wg, bar, p, DstPath)
 		}
 		wg.Wait()
 		return err
