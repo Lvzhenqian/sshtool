@@ -7,7 +7,7 @@ import (
 )
 
 const (
-	IP         = "192.168.1.202"
+	IP         = "192.168.33.20"
 	PORT       = 22
 	USERNAME   = "root"
 	PASSWORD   = "vagrant"
